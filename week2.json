@@ -1,0 +1,435 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create a VPC with public and private subnets, deploy EC2 instances, and configure Apache web server",
+    "Parameters": {
+      "LatestAmiId": {
+        "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+        "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+      }
+    },
+    "Resources": {
+      "MyVPC": {
+        "Type": "AWS::EC2::VPC",
+        "Properties": {
+          "CidrBlock": "10.0.0.0/16",
+          "EnableDnsSupport": true,
+          "EnableDnsHostnames": true,
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "MyVPC"
+            }
+          ]
+        }
+      },
+      "PublicSubnetAZ1": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "CidrBlock": "10.0.1.0/24",
+          "AvailabilityZone": {
+            "Fn::Select": [
+              0,
+              {
+                "Fn::GetAZs": ""
+              }
+            ]
+          },
+          "MapPublicIpOnLaunch": true,
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PublicSubnetAZ1"
+            }
+          ]
+        }
+      },
+      "PublicSubnetAZ2": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "CidrBlock": "10.0.2.0/24",
+          "AvailabilityZone": {
+            "Fn::Select": [
+              1,
+              {
+                "Fn::GetAZs": ""
+              }
+            ]
+          },
+          "MapPublicIpOnLaunch": true,
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PublicSubnetAZ2"
+            }
+          ]
+        }
+      },
+      "PrivateSubnetAZ1": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "CidrBlock": "10.0.3.0/24",
+          "AvailabilityZone": {
+            "Fn::Select": [
+              0,
+              {
+                "Fn::GetAZs": ""
+              }
+            ]
+          },
+          "MapPublicIpOnLaunch": false,
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PrivateSubnetAZ1"
+            }
+          ]
+        }
+      },
+      "PrivateSubnetAZ2": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "CidrBlock": "10.0.4.0/24",
+          "AvailabilityZone": {
+            "Fn::Select": [
+              1,
+              {
+                "Fn::GetAZs": ""
+              }
+            ]
+          },
+          "MapPublicIpOnLaunch": false,
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PrivateSubnetAZ2"
+            }
+          ]
+        }
+      },
+      "InternetGateway": {
+        "Type": "AWS::EC2::InternetGateway",
+        "Properties": {
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "MyInternetGateway"
+            }
+          ]
+        }
+      },
+      "AttachGateway": {
+        "Type": "AWS::EC2::VPCGatewayAttachment",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "InternetGatewayId": {
+            "Ref": "InternetGateway"
+          }
+        }
+      },
+      "PublicRouteTable": {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PublicRouteTable"
+            }
+          ]
+        }
+      },
+      "PublicRoute": {
+        "Type": "AWS::EC2::Route",
+        "DependsOn": "AttachGateway",
+        "Properties": {
+          "RouteTableId": {
+            "Ref": "PublicRouteTable"
+          },
+          "DestinationCidrBlock": "0.0.0.0/0",
+          "GatewayId": {
+            "Ref": "InternetGateway"
+          }
+        }
+      },
+      "PublicRouteTableAssociationAZ1": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "PublicSubnetAZ1"
+          },
+          "RouteTableId": {
+            "Ref": "PublicRouteTable"
+          }
+        }
+      },
+      "PublicRouteTableAssociationAZ2": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "PublicSubnetAZ2"
+          },
+          "RouteTableId": {
+            "Ref": "PublicRouteTable"
+          }
+        }
+      },
+      "PrivateRouteTable": {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PrivateRouteTable"
+            }
+          ]
+        }
+      },
+      "ElasticIP": {
+        "Type": "AWS::EC2::EIP",
+        "DependsOn": "AttachGateway",
+        "Properties": {
+          "Domain": "vpc"
+        }
+      },
+      "NatGateway": {
+        "Type": "AWS::EC2::NatGateway",
+        "Properties": {
+          "AllocationId": {
+            "Fn::GetAtt": [
+              "ElasticIP",
+              "AllocationId"
+            ]
+          },
+          "SubnetId": {
+            "Ref": "PublicSubnetAZ1"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "NatGateway"
+            }
+          ]
+        }
+      },
+      "PrivateRoute": {
+        "Type": "AWS::EC2::Route",
+        "Properties": {
+          "RouteTableId": {
+            "Ref": "PrivateRouteTable"
+          },
+          "DestinationCidrBlock": "0.0.0.0/0",
+          "NatGatewayId": {
+            "Ref": "NatGateway"
+          }
+        }
+      },
+      "PrivateRouteTableAssociationAZ1": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "PrivateSubnetAZ1"
+          },
+          "RouteTableId": {
+            "Ref": "PrivateRouteTable"
+          }
+        }
+      },
+      "PrivateRouteTableAssociationAZ2": {
+        "Type": "AWS::EC2::SubnetRouteTableAssociation",
+        "Properties": {
+          "SubnetId": {
+            "Ref": "PrivateSubnetAZ2"
+          },
+          "RouteTableId": {
+            "Ref": "PrivateRouteTable"
+          }
+        }
+      },
+      "WebServerSG": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "Allow HTTP and SSH traffic",
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "SecurityGroupIngress": [
+            {
+              "CidrIp": "0.0.0.0/0",
+              "IpProtocol": "tcp",
+              "FromPort": 80,
+              "ToPort": 80
+            },
+            {
+              "CidrIp": "0.0.0.0/0",
+              "IpProtocol": "tcp",
+              "FromPort": 22,
+              "ToPort": 22
+            }
+          ],
+          "SecurityGroupEgress": [
+            {
+              "CidrIp": "0.0.0.0/0",
+              "IpProtocol": "-1",
+              "FromPort": -1,
+              "ToPort": -1
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "WebServerSG"
+            }
+          ]
+        }
+      },
+      "PrivateInstanceSG": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "Allow SSH traffic from VPC CIDR only",
+          "VpcId": {
+            "Ref": "MyVPC"
+          },
+          "SecurityGroupIngress": [
+            {
+              "CidrIp": "10.0.0.0/16",
+              "IpProtocol": "tcp",
+              "FromPort": 22,
+              "ToPort": 22
+            }
+          ],
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PrivateInstanceSG"
+            }
+          ]
+        }
+      },
+      "PublicWebServer": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+          "InstanceType": "t2.micro",
+          "ImageId": {
+            "Ref": "LatestAmiId"
+          },
+          "SubnetId": {
+            "Ref": "PublicSubnetAZ1"
+          },
+          "SecurityGroupIds": [
+            {
+              "Ref": "WebServerSG"
+            }
+          ],
+          "KeyName": "Week2LabKeyPair",
+          "IamInstanceProfile": {
+            "Ref": "InstanceProfileForSSM"
+          },
+          "UserData": {
+            "Fn::Base64": "#!/bin/bash\nset -e\ndnf update -y\ndnf install -y httpd\nsystemctl start httpd\nsystemctl enable httpd\necho \"<html><body><h1>Hello, World!</h1></body></html>\" > /var/www/html/index.html\n\nif [ $? -ne 0 ]; then\n  /opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource PublicWebServer --region ${AWS::Region}\n  exit 1\nfi"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PublicWebServer"
+            }
+          ]
+        }
+      },
+      "PrivateInstance": {
+        "Type": "AWS::EC2::Instance",
+        "Properties": {
+          "InstanceType": "t2.micro",
+          "ImageId": {
+            "Ref": "LatestAmiId"
+          },
+          "SubnetId": {
+            "Ref": "PrivateSubnetAZ1"
+          },
+          "SecurityGroupIds": [
+            {
+              "Ref": "PrivateInstanceSG"
+            }
+          ],
+          "KeyName": "Week2LabKeyPair",
+          "IamInstanceProfile": {
+            "Ref": "InstanceProfileForSSM"
+          },
+          "Tags": [
+            {
+              "Key": "Name",
+              "Value": "PrivateInstance"
+            }
+          ]
+        }
+      },
+      "InstanceProfileForSSM": {
+        "Type": "AWS::IAM::InstanceProfile",
+        "Properties": {
+          "Roles": [
+            {
+              "Ref": "EC2RoleForSSM"
+            }
+          ]
+        }
+      },
+      "EC2RoleForSSM": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Action": "sts:AssumeRole",
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "ec2.amazonaws.com"
+                }
+              }
+            ]
+          },
+          "ManagedPolicyArns": [
+            "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+          ]
+        }
+      }
+    },
+    "Outputs": {
+      "PublicInstanceID": {
+        "Description": "Public Web Server Instance ID",
+        "Value": {
+          "Ref": "PublicWebServer"
+        }
+      },
+      "PrivateInstanceID": {
+        "Description": "Private Instance ID",
+        "Value": {
+          "Ref": "PrivateInstance"
+        }
+      },
+      "PublicWebServerURL": {
+        "Description": "Public Web Server URL",
+        "Value": {
+          "Fn::Sub": "http://${PublicWebServer.PublicDnsName}"
+        }
+      }
+    }
+  }
